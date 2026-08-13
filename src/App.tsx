@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { auth } from './firebase';
 import type { MockUser } from './firebase';
+import GradientWaves from './GradientWaves';
 import { 
   signInWithEmailAndPassword, 
   createUserWithEmailAndPassword, 
@@ -191,6 +192,9 @@ export default function App() {
   const [authError, setAuthError] = useState<string | null>(null);
   const [authSuccessMessage, setAuthSuccessMessage] = useState<string | null>(null);
 
+  // View states: 'landing' | 'analyze' | 'auth'
+  const [currentView, setCurrentView] = useState<'landing' | 'analyze' | 'auth'>('landing');
+
   // Form Fields
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -226,10 +230,12 @@ export default function App() {
           setCurrentUser(userData);
           setVerificationPendingEmail(null);
           localStorage.setItem('openinfra_user', JSON.stringify(userData));
+          setCurrentView('analyze');
         } else {
           // Email not verified, redirect to Verify screen
           setVerificationPendingEmail(firebaseUser.email);
           setCurrentUser(null);
+          setCurrentView('auth');
         }
       } else {
         setCurrentUser(null);
@@ -325,6 +331,7 @@ export default function App() {
           setCurrentUser(resolvedUser);
           localStorage.setItem('openinfra_user', JSON.stringify(resolvedUser));
           triggerToast('Welcome back!', 'success');
+          setCurrentView('analyze');
         }
       }
 
@@ -395,6 +402,7 @@ export default function App() {
           setVerificationPendingEmail(null);
           localStorage.setItem('openinfra_user', JSON.stringify(userData));
           triggerToast('Email verified successfully! Access granted.', 'success');
+          setCurrentView('analyze');
         } else {
           setAuthError('Your email address is still unverified. Please check your spam folder or request a new link.');
         }
@@ -460,6 +468,7 @@ export default function App() {
       setCurrentUser(googleUser);
       localStorage.setItem('openinfra_user', JSON.stringify(googleUser));
       triggerToast('Authenticated with Google successfully!', 'success');
+      setCurrentView('analyze');
     } catch (err: any) {
       let msg = err.message || 'Google authentication failed.';
       
@@ -497,6 +506,7 @@ export default function App() {
       setCurrentUser(githubUser);
       localStorage.setItem('openinfra_user', JSON.stringify(githubUser));
       triggerToast('Authenticated with GitHub successfully!', 'success');
+      setCurrentView('analyze');
     } catch (err: any) {
       let msg = err.message || 'GitHub authentication failed.';
       
@@ -785,14 +795,112 @@ export default function App() {
         </div>
       )}
 
-      {!currentUser ? (
+      {currentView === 'landing' && (
+        // Hero Landing Page (White theme with GradientWaves)
+        <div className="landing-container animate-reveal">
+          <div className="landing-waves-bg">
+            <GradientWaves
+              horizonColor="#ffffff"
+              waveColor="#6366f1"
+              crestColor="#3b82f6"
+              speed={0.3}
+              amplitude={1.8}
+              waveScale={0.5}
+              waveRatio={0.9}
+              swell={25}
+              turbulence={15}
+              tilt={1.2}
+              zoom={0.95}
+              height={5.0}
+              fogDepth={18}
+              detail="medium"
+              brightness={1.1}
+              opacity={0.8}
+              mouseInteraction={true}
+              parallaxStrength={0.4}
+              grain={true}
+              grainIntensity={0.03}
+            />
+          </div>
+          
+          <header className="landing-header">
+            <div className="brand-wrapper">
+              <GithubIcon size={24} />
+              <span className="brand-title">OpenInfra AI</span>
+            </div>
+            <div className="landing-nav">
+              <button 
+                className="btn-secondary" 
+                onClick={() => setCurrentView('analyze')}
+                style={{ padding: '6px 14px', fontSize: '13px' }}
+              >
+                Go to Analyzer
+              </button>
+              {currentUser ? (
+                <div className="user-profile-badge" style={{ padding: '5px 12px', fontSize: '13px' }}>
+                  <span>{currentUser.email}</span>
+                </div>
+              ) : (
+                <button 
+                  className="btn-primary" 
+                  onClick={() => {
+                    setIsRegistering(false);
+                    setIsForgotPassword(false);
+                    setAuthError(null);
+                    setAuthSuccessMessage(null);
+                    setCurrentView('auth');
+                  }}
+                  style={{ padding: '6px 14px', fontSize: '13px' }}
+                >
+                  Sign In
+                </button>
+              )}
+            </div>
+          </header>
+          
+          <main className="landing-hero">
+            <h1 className="hero-title animate-reveal">
+              OpenInfra AI Analyzer
+            </h1>
+            <p className="hero-subtitle animate-reveal" style={{ animationDelay: '0.1s' }}>
+              Evaluate repository health, license compliance, and project suitability parameters in real-time.
+            </p>
+            <div className="hero-actions animate-reveal" style={{ animationDelay: '0.2s' }}>
+              <button 
+                className="btn-primary hero-btn"
+                onClick={() => setCurrentView('analyze')}
+              >
+                <Search size={16} />
+                Analyze Repository
+              </button>
+              
+              {!currentUser && (
+                <button 
+                  className="btn-secondary hero-btn"
+                  onClick={() => {
+                    setIsRegistering(true);
+                    setIsForgotPassword(false);
+                    setAuthError(null);
+                    setAuthSuccessMessage(null);
+                    setCurrentView('auth');
+                  }}
+                >
+                  Create Account
+                </button>
+              )}
+            </div>
+          </main>
+        </div>
+      )}
+
+      {currentView === 'auth' && (
         // Split-Screen Login/Register Page (Light Minimalist Theme)
         <div className="login-container">
           
           {/* Left panel - Product Showcase */}
           <div className="login-left">
             <div className="showcase-title-area">
-              <div className="showcase-logo">
+              <div className="showcase-logo" style={{ cursor: 'pointer' }} onClick={() => setCurrentView('landing')}>
                 <GithubIcon size={24} />
                 <span>OpenInfra AI</span>
               </div>
@@ -1127,36 +1235,68 @@ export default function App() {
               </>
             )}
 
+            <div style={{ marginTop: '24px', fontSize: '13px', textAlign: 'center' }}>
+              <a href="#" onClick={(e) => { e.preventDefault(); setCurrentView('landing'); }} style={{ color: 'var(--text-secondary)', textDecoration: 'none', fontWeight: 500 }}>
+                ← Back to Home
+              </a>
+            </div>
+
           </div>
 
         </div>
-      ) : (
-        
+      )}
+
+      {currentView === 'analyze' && (
         // Post-login Dashboard Application (Light Minimalist Theme)
         <div className="dashboard-container animate-reveal">
           
           {/* Dashboard Top Header */}
           <header className="dashboard-header">
-            <div className="brand-wrapper">
+            <div className="brand-wrapper" style={{ cursor: 'pointer' }} onClick={() => setCurrentView('landing')}>
               <GithubIcon size={20} />
               <span className="brand-title">OpenInfra AI Analyzer</span>
             </div>
             
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <div className="user-profile-badge">
-                <div style={{ width: '6px', height: '6px', background: 'var(--status-success)', borderRadius: '50%' }}></div>
-                <span style={{ color: 'var(--text-secondary)', fontWeight: 500 }} title={currentUser.uid}>
-                  {currentUser.email}
-                </span>
-              </div>
               <button 
                 className="btn-secondary" 
                 style={{ padding: '5px 12px', fontSize: '13px' }}
-                onClick={handleSignOut}
+                onClick={() => setCurrentView('landing')}
               >
-                <LogOut size={13} />
-                Logout
+                Home
               </button>
+              {currentUser ? (
+                <>
+                  <div className="user-profile-badge">
+                    <div style={{ width: '6px', height: '6px', background: 'var(--status-success)', borderRadius: '50%' }}></div>
+                    <span style={{ color: 'var(--text-secondary)', fontWeight: 500 }} title={currentUser.uid}>
+                      {currentUser.email}
+                    </span>
+                  </div>
+                  <button 
+                    className="btn-secondary" 
+                    style={{ padding: '5px 12px', fontSize: '13px' }}
+                    onClick={handleSignOut}
+                  >
+                    <LogOut size={13} />
+                    Logout
+                  </button>
+                </>
+              ) : (
+                <button 
+                  className="btn-primary" 
+                  style={{ padding: '5px 12px', fontSize: '13px' }}
+                  onClick={() => {
+                    setIsRegistering(false);
+                    setIsForgotPassword(false);
+                    setAuthError(null);
+                    setAuthSuccessMessage(null);
+                    setCurrentView('auth');
+                  }}
+                >
+                  Sign In / Create Account
+                </button>
+              )}
             </div>
           </header>
 
