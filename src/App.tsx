@@ -29,6 +29,7 @@ import {
   sendEmailVerification,
   sendPasswordResetEmail,
   GoogleAuthProvider,
+  GithubAuthProvider,
   signInWithPopup
 } from 'firebase/auth';
 
@@ -477,23 +478,43 @@ export default function App() {
     }
   };
 
-  // GitHub Login simulator (developer bypass option)
+  // Live Firebase GitHub Sign In Handler
   const handleGithubAuth = async () => {
     setAuthError(null);
+    setAuthSuccessMessage(null);
     setAuthLoading(true);
-    
-    // Simulate network authentication speed
-    await new Promise(resolve => setTimeout(resolve, 600));
 
-    const githubUser: MockUser = {
-      email: 'github-developer@openinfra.ai',
-      uid: 'github_oauth_mock_' + Math.random().toString(36).substring(2)
-    };
-
-    setCurrentUser(githubUser);
-    localStorage.setItem('openinfra_user', JSON.stringify(githubUser));
-    setAuthLoading(false);
-    triggerToast('Authenticated securely with GitHub Token!', 'success');
+    try {
+      const provider = new GithubAuthProvider();
+      // GitHub Auth Popup exchange
+      const userCredential = await signInWithPopup(auth, provider);
+      const emailValue = userCredential.user.email || userCredential.user.providerData[0]?.email || `${userCredential.user.uid}@github.com`;
+      const githubUser: MockUser = {
+        email: emailValue,
+        uid: userCredential.user.uid
+      };
+      
+      setCurrentUser(githubUser);
+      localStorage.setItem('openinfra_user', JSON.stringify(githubUser));
+      triggerToast('Authenticated with GitHub successfully!', 'success');
+    } catch (err: any) {
+      let msg = err.message || 'GitHub authentication failed.';
+      
+      // Parse specific configuration errors
+      if (err.code === 'auth/operation-not-allowed') {
+        msg = 'GitHub Sign-In is disabled in your Firebase console. Please go to Authentication -> Sign-in method, click GitHub, and enable it.';
+      } else if (err.code === 'auth/popup-blocked') {
+        msg = 'Sign-in popup was blocked by your browser. Please allow popups for this site.';
+      } else if (err.code === 'auth/popup-closed-by-user') {
+        msg = 'Sign-in popup closed before authentication completed. Please try again.';
+      } else if (err.code === 'auth/account-exists-with-different-credential') {
+        msg = 'An account already exists with the same email address but different sign-in credentials. Sign in using Google or your email provider, or enable account linking.';
+      }
+      
+      setAuthError(msg);
+    } finally {
+      setAuthLoading(false);
+    }
   };
 
   // Live Firebase Sign Out Handler
