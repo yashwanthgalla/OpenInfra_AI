@@ -307,7 +307,7 @@ export default function App() {
         
         // Show pending verify card
         setVerificationPendingEmail(email.toLowerCase().trim());
-        triggerToast('Registration complete! Verification email sent.', 'success');
+        triggerToast('Registration complete! Verification email sent (please check your spam folder).', 'success');
       } else {
         // Live Firebase signIn call
         const userCredential = await signInWithEmailAndPassword(auth, email, password);
@@ -316,7 +316,7 @@ export default function App() {
         if (!userCredential.user.emailVerified) {
           await sendEmailVerification(userCredential.user); // auto-resend verification on attempt
           setVerificationPendingEmail(email.toLowerCase().trim());
-          triggerToast('Email not verified. Verification link sent to inbox.', 'error');
+          triggerToast('Email not verified. Verification link sent to inbox (please check your spam folder).', 'error');
         } else {
           const resolvedUser = {
             email: userCredential.user.email || email.toLowerCase().trim(),
@@ -363,7 +363,7 @@ export default function App() {
 
     try {
       await sendPasswordResetEmail(auth, email);
-      setAuthSuccessMessage(`Password reset link sent to ${email.toLowerCase().trim()}. Please check your email inbox.`);
+      setAuthSuccessMessage(`Password reset link sent to ${email.toLowerCase().trim()}. Please check your email inbox (including your spam folder).`);
       setEmail('');
     } catch (err: any) {
       let msg = err.message || 'Failed to send password reset email.';
@@ -418,8 +418,8 @@ export default function App() {
       const user = auth.currentUser;
       if (user) {
         await sendEmailVerification(user);
-        setAuthSuccessMessage('Verification email resent! Please check your inbox.');
-        triggerToast('Verification link sent.', 'success');
+        setAuthSuccessMessage('Verification email resent! Please check your inbox (including your spam folder).');
+        triggerToast('Verification link sent (please check your spam folder).', 'success');
       } else {
         setAuthError('Session expired. Please sign in again.');
         setVerificationPendingEmail(null);
@@ -900,7 +900,7 @@ export default function App() {
                 
                 <h2 className="login-header-title">Verify your email</h2>
                 <p className="login-header-subtitle" style={{ marginBottom: '20px' }}>
-                  We sent an activation link to <strong>{verificationPendingEmail}</strong>. Please verify your email to unlock dashboard diagnostics.
+                  We sent an activation link to <strong>{verificationPendingEmail}</strong>. Please verify your email to unlock dashboard diagnostics (please check your spam/junk folder if you don't see it).
                 </p>
 
                 {/* Form feedback indicators */}
