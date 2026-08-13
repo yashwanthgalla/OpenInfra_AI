@@ -31,5 +31,6 @@ export { firebaseConfig };
 export interface MockUser {
   email: string;
   uid: string;
+  displayName?: string | null;
 }
 export type User = MockUser;

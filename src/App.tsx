@@ -18,7 +18,12 @@ import {
   Heart,
   Loader2,
   Code,
-  MailOpen
+  MailOpen,
+  Settings,
+  User,
+  Moon,
+  Sun,
+  Sliders
 } from 'lucide-react';
 import { auth } from './firebase';
 import type { MockUser } from './firebase';
@@ -31,7 +36,9 @@ import {
   sendPasswordResetEmail,
   GoogleAuthProvider,
   GithubAuthProvider,
-  signInWithPopup
+  signInWithPopup,
+  updateProfile,
+  updateEmail
 } from 'firebase/auth';
 
 interface CustomIconProps extends React.SVGProps<SVGSVGElement> {
@@ -182,6 +189,22 @@ const MOCK_REPOS: { [key: string]: { repo: RepoData; langs: LanguageData } } = {
 };
 
 export default function App() {
+  // Load settings from localStorage helper
+  const getInitialSetting = <T,>(key: string, defaultValue: T): T => {
+    try {
+      const stored = localStorage.getItem('openinfra_settings');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (parsed[key] !== undefined) {
+          return parsed[key] as T;
+        }
+      }
+    } catch (e) {
+      console.warn("Failed to parse settings", e);
+    }
+    return defaultValue;
+  };
+
   // Stateful Authentication observers
   const [currentUser, setCurrentUser] = useState<MockUser | null>(null);
   const [isRegistering, setIsRegistering] = useState(false);
@@ -192,8 +215,24 @@ export default function App() {
   const [authError, setAuthError] = useState<string | null>(null);
   const [authSuccessMessage, setAuthSuccessMessage] = useState<string | null>(null);
 
-  // View states: 'landing' | 'analyze' | 'auth'
-  const [currentView, setCurrentView] = useState<'landing' | 'analyze' | 'auth'>('landing');
+  // View states: 'landing' | 'analyze' | 'auth' | 'profile'
+  const [currentView, setCurrentView] = useState<'landing' | 'analyze' | 'auth' | 'profile'>('landing');
+
+  // Preference Settings
+  const [darkMode, setDarkMode] = useState<boolean>(() => getInitialSetting('darkMode', false));
+  const [defaultProfile, setDefaultProfile] = useState<ProjectProfile>(() => getInitialSetting('defaultProfile', 'enterprise'));
+  const [waveSpeed, setWaveSpeed] = useState<number>(() => getInitialSetting('waveSpeed', 0.3));
+  const [waveAmplitude, setWaveAmplitude] = useState<number>(() => getInitialSetting('waveAmplitude', 1.8));
+  const [waveDetail, setWaveDetail] = useState<'low' | 'medium' | 'high'>(() => getInitialSetting('waveDetail', 'medium'));
+  const [mouseInteraction, setMouseInteraction] = useState<boolean>(() => getInitialSetting('mouseInteraction', true));
+
+  // Profile Form states
+  const [usernameEdit, setUsernameEdit] = useState('');
+  const [emailEdit, setEmailEdit] = useState('');
+  const [activeSettingsTab, setActiveSettingsTab] = useState<'account' | 'preferences'>('account');
+  const [profileSaving, setProfileSaving] = useState(false);
+  const [profileError, setProfileError] = useState<string | null>(null);
+  const [profileSuccess, setProfileSuccess] = useState<string | null>(null);
 
   // Form Fields
   const [email, setEmail] = useState('');
@@ -201,7 +240,7 @@ export default function App() {
   
   // App functional states
   const [repoInput, setRepoInput] = useState('facebook/react');
-  const [profile, setProfile] = useState<ProjectProfile>('enterprise');
+  const [profile, setProfile] = useState<ProjectProfile>(() => getInitialSetting('defaultProfile', 'enterprise'));
   const [loading, setLoading] = useState(false);
   const [loadingStep, setLoadingStep] = useState('');
   const [repoData, setRepoData] = useState<RepoData | null>(null);
@@ -216,16 +255,35 @@ export default function App() {
   const [activeCycle, setActiveCycle] = useState(0);
   const [showcaseRepo, setShowcaseRepo] = useState('facebook/react');
   const [showcaseVerdict, setShowcaseVerdict] = useState('Perfect Match');
+
+  // Apply dark theme dynamically
+  useEffect(() => {
+    if (darkMode) {
+      document.documentElement.classList.add('dark-theme');
+    } else {
+      document.documentElement.classList.remove('dark-theme');
+    }
+  }, [darkMode]);
+
+  // Sync profile editing fields with loaded user details
+  useEffect(() => {
+    if (currentUser) {
+      setUsernameEdit(currentUser.displayName || currentUser.email.split('@')[0] || '');
+      setEmailEdit(currentUser.email);
+    }
+  }, [currentUser]);
   
   // Live Firebase Auth State Observer
   useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged(async (firebaseUser) => {
       if (firebaseUser) {
-        // If email is verified, resolve user session
-        if (firebaseUser.emailVerified) {
+        // If email is verified or user logged in via OAuth (e.g. Google/GitHub), resolve user session
+        const isVerified = firebaseUser.emailVerified || firebaseUser.providerData.some(p => p.providerId !== 'password');
+        if (isVerified) {
           const userData: MockUser = {
             email: firebaseUser.email || '',
-            uid: firebaseUser.uid
+            uid: firebaseUser.uid,
+            displayName: firebaseUser.displayName
           };
           setCurrentUser(userData);
           setVerificationPendingEmail(null);
@@ -324,9 +382,10 @@ export default function App() {
           setVerificationPendingEmail(email.toLowerCase().trim());
           triggerToast('Email not verified. Verification link sent to inbox (please check your spam folder).', 'error');
         } else {
-          const resolvedUser = {
+          const resolvedUser: MockUser = {
             email: userCredential.user.email || email.toLowerCase().trim(),
-            uid: userCredential.user.uid
+            uid: userCredential.user.uid,
+            displayName: userCredential.user.displayName
           };
           setCurrentUser(resolvedUser);
           localStorage.setItem('openinfra_user', JSON.stringify(resolvedUser));
@@ -396,7 +455,8 @@ export default function App() {
         if (user.emailVerified) {
           const userData: MockUser = {
             email: user.email || '',
-            uid: user.uid
+            uid: user.uid,
+            displayName: user.displayName
           };
           setCurrentUser(userData);
           setVerificationPendingEmail(null);
@@ -462,7 +522,8 @@ export default function App() {
       const userCredential = await signInWithPopup(auth, provider);
       const googleUser: MockUser = {
         email: userCredential.user.email || '',
-        uid: userCredential.user.uid
+        uid: userCredential.user.uid,
+        displayName: userCredential.user.displayName
       };
       
       setCurrentUser(googleUser);
@@ -500,7 +561,8 @@ export default function App() {
       const emailValue = userCredential.user.email || userCredential.user.providerData[0]?.email || `${userCredential.user.uid}@github.com`;
       const githubUser: MockUser = {
         email: emailValue,
-        uid: userCredential.user.uid
+        uid: userCredential.user.uid,
+        displayName: userCredential.user.displayName
       };
       
       setCurrentUser(githubUser);
@@ -538,6 +600,101 @@ export default function App() {
       triggerToast('Signed out successfully.');
     } catch (err: any) {
       triggerToast('Failed to sign out: ' + err.message, 'error');
+    }
+  };
+
+  // Save preferences to localStorage
+  const handleSaveSettings = (
+    e: React.FormEvent,
+    newDarkMode: boolean,
+    newProfile: ProjectProfile,
+    newSpeed: number,
+    newAmp: number,
+    newDetail: 'low' | 'medium' | 'high',
+    newMouse: boolean
+  ) => {
+    e.preventDefault();
+    try {
+      const settingsObj = {
+        darkMode: newDarkMode,
+        defaultProfile: newProfile,
+        waveSpeed: newSpeed,
+        waveAmplitude: newAmp,
+        waveDetail: newDetail,
+        mouseInteraction: newMouse
+      };
+      localStorage.setItem('openinfra_settings', JSON.stringify(settingsObj));
+      
+      // Update state
+      setDarkMode(newDarkMode);
+      setDefaultProfile(newProfile);
+      setWaveSpeed(newSpeed);
+      setWaveAmplitude(newAmp);
+      setWaveDetail(newDetail);
+      setMouseInteraction(newMouse);
+      
+      triggerToast('Preferences saved successfully!', 'success');
+      setProfileSuccess('Preferences updated!');
+      setTimeout(() => setProfileSuccess(null), 3000);
+    } catch (err: any) {
+      setProfileError('Failed to save settings: ' + err.message);
+      setTimeout(() => setProfileError(null), 3000);
+    }
+  };
+
+  // Update account profile (username, email) in Firebase Auth
+  const handleUpdateProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setProfileSaving(true);
+    setProfileError(null);
+    setProfileSuccess(null);
+
+    try {
+      const user = auth.currentUser;
+      if (!user) {
+        throw new Error("No active user session found.");
+      }
+
+      // 1. Update Username (displayName)
+      if (usernameEdit.trim() && usernameEdit !== user.displayName) {
+        await updateProfile(user, { displayName: usernameEdit.trim() });
+      }
+
+      // 2. Update Email if changed and NOT federated (OAuth user provider)
+      const isPasswordUser = user.providerData.some(p => p.providerId === 'password');
+      if (isPasswordUser && emailEdit.trim() && emailEdit.trim() !== user.email) {
+        if (!validateEmail(emailEdit)) {
+          throw new Error("Please enter a valid email address.");
+        }
+        await updateEmail(user, emailEdit.trim());
+      }
+
+      // Reload user data
+      await user.reload();
+      const updatedUser = auth.currentUser;
+      if (updatedUser) {
+        const resolvedUser: MockUser = {
+          email: updatedUser.email || '',
+          uid: updatedUser.uid,
+          displayName: updatedUser.displayName
+        };
+        setCurrentUser(resolvedUser);
+        localStorage.setItem('openinfra_user', JSON.stringify(resolvedUser));
+      }
+
+      triggerToast('Profile updated successfully!', 'success');
+      setProfileSuccess('Profile changes saved successfully!');
+      setTimeout(() => setProfileSuccess(null), 3000);
+    } catch (err: any) {
+      let msg = err.message || 'Failed to update profile.';
+      if (err.code === 'auth/requires-recent-login') {
+        msg = 'For security reasons, changing your email requires a recent sign-in. Please sign out and sign back in to modify this field.';
+      } else if (err.code === 'auth/email-already-in-use') {
+        msg = 'This email address is already in use by another account.';
+      }
+      setProfileError(msg);
+    } finally {
+      setProfileSaving(false);
     }
   };
 
@@ -800,11 +957,11 @@ export default function App() {
         <div className="landing-container animate-reveal">
           <div className="landing-waves-bg">
             <GradientWaves
-              horizonColor="#ffffff"
-              waveColor="#6366f1"
-              crestColor="#3b82f6"
-              speed={0.3}
-              amplitude={1.8}
+              horizonColor={darkMode ? "#09090b" : "#ffffff"}
+              waveColor={darkMode ? "#1d4ed8" : "#6366f1"}
+              crestColor={darkMode ? "#60a5fa" : "#3b82f6"}
+              speed={waveSpeed}
+              amplitude={waveAmplitude}
               waveScale={0.5}
               waveRatio={0.9}
               swell={25}
@@ -813,10 +970,10 @@ export default function App() {
               zoom={0.95}
               height={5.0}
               fogDepth={18}
-              detail="medium"
-              brightness={1.1}
-              opacity={0.8}
-              mouseInteraction={true}
+              detail={waveDetail}
+              brightness={darkMode ? 0.7 : 1.1}
+              opacity={darkMode ? 0.9 : 0.8}
+              mouseInteraction={mouseInteraction}
               parallaxStrength={0.4}
               grain={true}
               grainIntensity={0.03}
@@ -837,8 +994,13 @@ export default function App() {
                 Go to Analyzer
               </button>
               {currentUser ? (
-                <div className="user-profile-badge" style={{ padding: '5px 12px', fontSize: '13px' }}>
-                  <span>{currentUser.email}</span>
+                <div 
+                  className="user-profile-badge" 
+                  style={{ padding: '5px 12px', fontSize: '13px', cursor: 'pointer', display: 'flex', gap: '8px', alignItems: 'center' }}
+                  onClick={() => setCurrentView('profile')}
+                >
+                  <User size={13} style={{ color: 'var(--accent-cobalt)' }} />
+                  <span>{currentUser.displayName || currentUser.email}</span>
                 </div>
               ) : (
                 <button 
@@ -1267,11 +1429,17 @@ export default function App() {
               </button>
               {currentUser ? (
                 <>
-                  <div className="user-profile-badge">
+                  <div 
+                    className="user-profile-badge" 
+                    style={{ cursor: 'pointer', display: 'flex', gap: '8px', alignItems: 'center' }}
+                    onClick={() => setCurrentView('profile')}
+                    title="View Profile and Preferences"
+                  >
                     <div style={{ width: '6px', height: '6px', background: 'var(--status-success)', borderRadius: '50%' }}></div>
-                    <span style={{ color: 'var(--text-secondary)', fontWeight: 500 }} title={currentUser.uid}>
-                      {currentUser.email}
+                    <span style={{ color: 'var(--text-secondary)', fontWeight: 500 }}>
+                      {currentUser.displayName || currentUser.email}
                     </span>
+                    <Settings size={13} style={{ color: 'var(--text-muted)' }} />
                   </div>
                   <button 
                     className="btn-secondary" 
@@ -1737,6 +1905,327 @@ export default function App() {
 
           </div>
 
+        </div>
+      )}
+
+      {currentView === 'profile' && (
+        <div className="profile-container animate-reveal">
+          {/* Header */}
+          <header className="dashboard-header">
+            <div className="brand-wrapper" style={{ cursor: 'pointer' }} onClick={() => setCurrentView('analyze')}>
+              <GithubIcon size={20} />
+              <span className="brand-title">OpenInfra AI Analyzer</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <button 
+                className="btn-secondary" 
+                style={{ padding: '5px 12px', fontSize: '13px' }}
+                onClick={() => setCurrentView('analyze')}
+              >
+                ← Back to Dashboard
+              </button>
+              <button 
+                className="btn-secondary" 
+                style={{ padding: '5px 12px', fontSize: '13px' }}
+                onClick={() => setCurrentView('landing')}
+              >
+                Home
+              </button>
+            </div>
+          </header>
+
+          {/* Grid Layout */}
+          <div className="profile-grid">
+            {/* Sidebar User Card */}
+            <div className="glass-panel profile-card">
+              <div className="avatar-circle">
+                {usernameEdit.trim() ? usernameEdit.trim()[0] : (currentUser?.email ? currentUser.email[0] : 'U')}
+              </div>
+              <h2 className="profile-username">
+                {currentUser?.displayName || usernameEdit || 'OpenInfra User'}
+              </h2>
+              <p className="profile-email">{currentUser?.email}</p>
+              
+              <div className="profile-meta">
+                <div>UID: {currentUser?.uid.substring(0, 12)}...</div>
+                <div style={{ marginTop: '4px' }}>Session Status: Active</div>
+              </div>
+            </div>
+
+            {/* Settings Card */}
+            <div className="glass-panel settings-panel-card">
+              <div className="settings-tabs">
+                <button 
+                  className={`settings-tab-btn ${activeSettingsTab === 'account' ? 'active' : ''}`}
+                  onClick={() => setActiveSettingsTab('account')}
+                >
+                  <User size={13} style={{ display: 'inline-block', marginRight: '4px', verticalAlign: 'text-bottom' }} />
+                  Account Settings
+                </button>
+                <button 
+                  className={`settings-tab-btn ${activeSettingsTab === 'preferences' ? 'active' : ''}`}
+                  onClick={() => setActiveSettingsTab('preferences')}
+                >
+                  <Sliders size={13} style={{ display: 'inline-block', marginRight: '4px', verticalAlign: 'text-bottom' }} />
+                  App Preferences
+                </button>
+              </div>
+
+              {activeSettingsTab === 'account' && (
+                <form onSubmit={handleUpdateProfile}>
+                  <div className="settings-group">
+                    <h3 className="settings-group-title">Profile Identity</h3>
+                    
+                    {profileError && (
+                      <div className="auth-error-msg">
+                        <AlertCircle size={14} style={{ flexShrink: 0 }} />
+                        <span>{profileError}</span>
+                      </div>
+                    )}
+                    {profileSuccess && (
+                      <div style={{ background: 'var(--status-success-bg)', border: '1px solid var(--status-success-border)', color: 'var(--status-success)', padding: '10px', borderRadius: '6px', fontSize: '13px', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <CheckCircle2 size={14} style={{ flexShrink: 0 }} />
+                        <span>{profileSuccess}</span>
+                      </div>
+                    )}
+
+                    <div className="form-group">
+                      <label>Username / Display Name</label>
+                      <input 
+                        type="text" 
+                        placeholder="Choose a display name"
+                        value={usernameEdit}
+                        onChange={(e) => setUsernameEdit(e.target.value)}
+                        disabled={profileSaving}
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label>Email Address</label>
+                      <input 
+                        type="email" 
+                        value={emailEdit}
+                        onChange={(e) => setEmailEdit(e.target.value)}
+                        disabled={profileSaving || !auth.currentUser?.providerData.some(p => p.providerId === 'password')}
+                      />
+                      {!auth.currentUser?.providerData.some(p => p.providerId === 'password') && (
+                        <div className="oauth-badge">
+                          {auth.currentUser?.providerData.some(p => p.providerId === 'google.com') ? (
+                            <>
+                              <GoogleIcon /> Connected via Google Account
+                            </>
+                          ) : (
+                            <>
+                              <GithubIcon size={12} /> Connected via GitHub Account
+                            </>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="settings-group">
+                    <h3 className="settings-group-title">Credentials Management</h3>
+                    <div className="settings-row">
+                      <div className="settings-info">
+                        <div className="settings-title">Reset password credentials</div>
+                        <div className="settings-desc">Receive a password recovery/reset email to change credentials</div>
+                      </div>
+                      <button 
+                        type="button"
+                        className="btn-secondary"
+                        style={{ padding: '6px 12px', fontSize: '12px' }}
+                        disabled={profileSaving || !auth.currentUser?.providerData.some(p => p.providerId === 'password')}
+                        onClick={async () => {
+                          if (currentUser?.email) {
+                            try {
+                              await sendPasswordResetEmail(auth, currentUser.email);
+                              triggerToast('Password reset link sent successfully!', 'success');
+                            } catch (e: any) {
+                              triggerToast(e.message || 'Failed to send reset email.', 'error');
+                            }
+                          }
+                        }}
+                      >
+                        Reset Password
+                      </button>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '24px' }}>
+                    <button 
+                      type="button" 
+                      className="btn-secondary" 
+                      onClick={() => {
+                        if (currentUser) {
+                          setUsernameEdit(currentUser.displayName || currentUser.email.split('@')[0] || '');
+                          setEmailEdit(currentUser.email);
+                        }
+                      }}
+                      disabled={profileSaving}
+                    >
+                      Reset Form
+                    </button>
+                    <button 
+                      type="submit" 
+                      className="btn-primary" 
+                      disabled={profileSaving}
+                    >
+                      {profileSaving ? (
+                        <>
+                          <Loader2 size={14} className="animate-spin" />
+                          Saving...
+                        </>
+                      ) : (
+                        'Save Profile Changes'
+                      )}
+                    </button>
+                  </div>
+                </form>
+              )}
+
+              {activeSettingsTab === 'preferences' && (
+                <form onSubmit={(e) => handleSaveSettings(e, darkMode, defaultProfile, waveSpeed, waveAmplitude, waveDetail, mouseInteraction)}>
+                  <div className="settings-group">
+                    <h3 className="settings-group-title">Visual Customization</h3>
+                    
+                    {profileSuccess && (
+                      <div style={{ background: 'var(--status-success-bg)', border: '1px solid var(--status-success-border)', color: 'var(--status-success)', padding: '10px', borderRadius: '6px', fontSize: '13px', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <CheckCircle2 size={14} style={{ flexShrink: 0 }} />
+                        <span>{profileSuccess}</span>
+                      </div>
+                    )}
+                    
+                    <div className="settings-row">
+                      <div className="settings-info">
+                        <div className="settings-title">App theme mode</div>
+                        <div className="settings-desc">Toggle between Light minimalist and Sleek Dark modes</div>
+                      </div>
+                      <div>
+                        <label className="toggle-switch-label">
+                          <input 
+                            type="checkbox" 
+                            className="toggle-input"
+                            checked={darkMode}
+                            onChange={(e) => setDarkMode(e.target.checked)}
+                          />
+                          <div className="toggle-switch"></div>
+                          {darkMode ? <Moon size={14} style={{ color: 'var(--accent-cobalt)' }} /> : <Sun size={14} style={{ color: 'var(--status-warning)' }} />}
+                        </label>
+                      </div>
+                    </div>
+
+                    <div className="settings-row">
+                      <div className="settings-info">
+                        <div className="settings-title">Interactive Background Animation</div>
+                        <div className="settings-desc">Enable dynamic cursor parallax influence on rendering waves</div>
+                      </div>
+                      <div>
+                        <label className="toggle-switch-label">
+                          <input 
+                            type="checkbox" 
+                            className="toggle-input"
+                            checked={mouseInteraction}
+                            onChange={(e) => setMouseInteraction(e.target.checked)}
+                          />
+                          <div className="toggle-switch"></div>
+                        </label>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="settings-group">
+                    <h3 className="settings-group-title">Evaluation Preferences</h3>
+                    
+                    <div className="form-group">
+                      <label>Default Project Target Profile</label>
+                      <select 
+                        value={defaultProfile}
+                        onChange={(e) => setDefaultProfile(e.target.value as ProjectProfile)}
+                      >
+                        <option value="enterprise">Enterprise Core (High Stability)</option>
+                        <option value="startup">Startup MVP (Adoption & Community)</option>
+                        <option value="learning">Learning & Demos (Readability)</option>
+                        <option value="hobby">Low-Maintenance Hobby (Static Structures)</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="settings-group">
+                    <h3 className="settings-group-title">Wave Physics & Rendering Performance</h3>
+                    
+                    <div className="form-group" style={{ marginBottom: '20px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                        <label style={{ margin: 0 }}>Wave Speed Coefficient</label>
+                        <span className="slider-value-badge">{waveSpeed}x</span>
+                      </div>
+                      <input 
+                        type="range" 
+                        min="0" 
+                        max="1.5" 
+                        step="0.05"
+                        value={waveSpeed}
+                        onChange={(e) => setWaveSpeed(parseFloat(e.target.value))}
+                        className="settings-range-slider"
+                      />
+                    </div>
+
+                    <div className="form-group" style={{ marginBottom: '20px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                        <label style={{ margin: 0 }}>Wave Crest Amplitude</label>
+                        <span className="slider-value-badge">{waveAmplitude}px</span>
+                      </div>
+                      <input 
+                        type="range" 
+                        min="0.2" 
+                        max="5.0" 
+                        step="0.1"
+                        value={waveAmplitude}
+                        onChange={(e) => setWaveAmplitude(parseFloat(e.target.value))}
+                        className="settings-range-slider"
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label>Render Geometry Detail</label>
+                      <select 
+                        value={waveDetail}
+                        onChange={(e) => setWaveDetail(e.target.value as 'low' | 'medium' | 'high')}
+                      >
+                        <option value="low">Low Detail (Better Performance / Frame Rates)</option>
+                        <option value="medium">Medium Detail (Balanced Aesthetics)</option>
+                        <option value="high">High Detail (Strict Quality Geometric Mesh)</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '24px' }}>
+                    <button 
+                      type="button" 
+                      className="btn-secondary" 
+                      onClick={() => {
+                        setDarkMode(getInitialSetting('darkMode', false));
+                        setDefaultProfile(getInitialSetting('defaultProfile', 'enterprise'));
+                        setWaveSpeed(getInitialSetting('waveSpeed', 0.3));
+                        setWaveAmplitude(getInitialSetting('waveAmplitude', 1.8));
+                        setWaveDetail(getInitialSetting('waveDetail', 'medium'));
+                        setMouseInteraction(getInitialSetting('mouseInteraction', true));
+                      }}
+                    >
+                      Reset Form
+                    </button>
+                    <button 
+                      type="submit" 
+                      className="btn-primary"
+                    >
+                      Save App Preferences
+                    </button>
+                  </div>
+                </form>
+              )}
+
+            </div>
+          </div>
         </div>
       )}
     </>
